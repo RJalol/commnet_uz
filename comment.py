@@ -1,11 +1,13 @@
-import time
 import os
 import pickle
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException, NoSuchElementException
+from selenium.common.exceptions import ElementClickInterceptedException, NoSuchElementException
+import random
+import time
+from datetime import datetime
 
 # 🔧 Chrome sozlamalar
 options = Options()
@@ -22,21 +24,33 @@ pkl_file = "checkpoint.pkl"
 # 🌍 URL
 url = "https://sharh.commeta.uz/en/reviews/all"
 
-# ✅ Checkpoint yuklash
+# ✅ Checkpointdan yuklash
 loaded_ids = set()
+current_page = 1
 if os.path.exists(pkl_file):
     with open(pkl_file, 'rb') as f:
-        loaded_ids = pickle.load(f)
-    print(f"♻️ Oldindan yuklangan {len(loaded_ids)} ta sharh mavjud.")
+        checkpoint_data = pickle.load(f)
+        loaded_ids = checkpoint_data.get("ids", set())
+        current_page = checkpoint_data.get("page", 1)
+    print(f"{datetime.now()} ♻️ Oldindan yuklangan {len(loaded_ids)} ta sharh mavjud. Sahifa: {current_page}")
 
-# 🔄 Sahifani ochish
+# 🔄 Saytni ochish
 driver.get(url)
 time.sleep(5)
 
+# ➕ Avvalgi sahifalarni yuklash
+for _ in range(current_page - 1):
+    try:
+        load_more_btn = driver.find_element(By.XPATH, '//span[contains(text(), "Load more")]')
+        driver.execute_script("arguments[0].click();", load_more_btn)
+        time.sleep(random.uniform(1.5, 3.5))
+    except Exception:
+        break
+
+# 🧩 Sharhlarni olish funksiyasi
 def extract_reviews():
     reviews = driver.find_elements(By.XPATH, '//div[@itemtype="https://schema.org/Review"]')
     extracted = []
-    
     for review in reviews:
         try:
             review_id = review.get_attribute("id")
@@ -64,48 +78,46 @@ def extract_reviews():
             })
 
             loaded_ids.add(review_id)
-
-        except Exception as e:
+        except Exception:
             continue
-
     return extracted
 
-# 🔁 Barcha sharhlar uchun aylanish
+# 🔁 Sahifalar bo‘yicha aylanish
 all_data = []
 
 while True:
-    print("🔄 Yangi sharhlar qidirilmoqda...")
+    print(f"{datetime.now()} 🔄 Yangi sharhlar qidirilmoqda... Sahifa: {current_page}")
     new_reviews = extract_reviews()
 
     if not new_reviews:
-        print("❌ Yangi sharh topilmadi.")
+        print(f"{datetime.now()} ❌ Yangi sharh topilmadi.")
     else:
-        print(f"✅ {len(new_reviews)} ta yangi sharh topildi.")
+        print(f"{datetime.now()} ✅ {len(new_reviews)} ta yangi sharh topildi.")
         all_data.extend(new_reviews)
 
-        # CSV ga qo‘shib yozish
         df = pd.DataFrame(new_reviews)
         if os.path.exists(csv_file):
             df.to_csv(csv_file, mode='a', header=False, index=False, encoding='utf-8-sig')
         else:
             df.to_csv(csv_file, index=False, encoding='utf-8-sig')
 
-        # Checkpoint saqlash
+        # 🔐 Checkpoint saqlash
         with open(pkl_file, 'wb') as f:
-            pickle.dump(loaded_ids, f)
+            pickle.dump({"ids": loaded_ids, "page": current_page}, f)
 
     try:
         load_more_btn = driver.find_element(By.XPATH, '//span[contains(text(), "Load more")]')
         driver.execute_script("arguments[0].click();", load_more_btn)
-        time.sleep(1.5)
+        time.sleep(random.uniform(3, 6))
+        current_page += 1
     except NoSuchElementException:
-        print("✅ Barcha sharhlar yuklandi.")
+        print(f"{datetime.now()} ✅ Barcha sharhlar yuklandi.")
         break
     except ElementClickInterceptedException:
-        print("⚠️ Load More tugmasini bosib bo‘lmadi, qaytadan urinib ko‘riladi...")
-        time.sleep(2)
+        print(f"{datetime.now()} ⚠️ Load More tugmasini bosib bo‘lmadi, yana urinilmoqda...")
+        time.sleep(random.uniform(3, 6))
     except Exception as e:
-        print("❌ Xatolik:", str(e))
+        print(f"{datetime.now()} ❌ Xatolik yuz berdi: {e}")
         break
 
 driver.quit()
